@@ -18,8 +18,15 @@
   };
 
   function getSettings() {
-    return new Promise((resolve) => {
-      chrome.storage.sync.get(DEFAULTS, (r) => resolve({ ...DEFAULTS, ...r }));
+    return new Promise((resolve, reject) => {
+      try {
+        chrome.storage.sync.get(DEFAULTS, (r) => {
+          if (chrome.runtime.lastError) return reject(chrome.runtime.lastError);
+          resolve({ ...DEFAULTS, ...r });
+        });
+      } catch (e) {
+        reject(e);
+      }
     });
   }
 
@@ -40,20 +47,64 @@
     return null;
   }
 
-  /** Try to read selected asset IDs from Immich's multi-select UI.
-   *  Immich renders checkboxes with data-asset-id attributes when in select mode. */
+  /**
+   * Extract selected asset IDs from Immich's multi-select UI.
+   *
+   * Immich (Svelte, current versions) does NOT use data-asset-id attributes.
+   * Selected thumbnails use role="checkbox" aria-checked="true".
+   * The asset ID is embedded in the thumbnail image src URL:
+   *   /api/assets/<uuid>/thumbnail?...
+   * We walk up from the checkbox to find the nearest <img> with that pattern.
+   */
   function getSelectedAssetIds() {
-    // Immich selection: checked checkboxes carry the asset id in closest [data-asset-id]
-    const checked = document.querySelectorAll(
-      '[data-asset-id] input[type="checkbox"]:checked, [data-testid="asset-checkbox"]:checked'
-    );
-    if (checked.length > 0) {
-      return [...new Set([...checked].map(el => {
-        const parent = el.closest("[data-asset-id]");
-        return parent ? parent.getAttribute("data-asset-id") : null;
-      }).filter(Boolean))];
+    const ASSET_URL_RE = /\/api\/assets\/([0-9a-f-]{36})\//i;
+    const ids = new Set();
+
+    // Strategy 1: role="checkbox" aria-checked="true" (current Immich)
+    document.querySelectorAll('[role="checkbox"][aria-checked="true"]').forEach(el => {
+      // Walk siblings and descendants for an img with asset URL
+      const container = el.closest("li, article, [class*='thumbnail'], [class*='asset'], div")
+        || el.parentElement;
+      if (!container) return;
+      const img = container.querySelector("img[src*='/api/assets/']");
+      if (img) {
+        const m = img.src.match(ASSET_URL_RE);
+        if (m) { ids.add(m[1]); return; }
+      }
+      // Fallback: check container's own src-like attributes or links
+      const link = container.querySelector("a[href*='/photos/']");
+      if (link) {
+        const m2 = link.href.match(/\/photos\/([0-9a-f-]{36})/i);
+        if (m2) ids.add(m2[1]);
+      }
+    });
+
+    // Strategy 2: any checked input inside a thumbnail container with an asset img
+    if (ids.size === 0) {
+      document.querySelectorAll("input[type='checkbox']:checked").forEach(el => {
+        const container = el.closest("li, article, div");
+        if (!container) return;
+        const img = container.querySelector("img[src*='/api/assets/']");
+        if (img) {
+          const m = img.src.match(ASSET_URL_RE);
+          if (m) ids.add(m[1]);
+        }
+      });
     }
-    return [];
+
+    // Strategy 3: elements with aria-selected="true"
+    if (ids.size === 0) {
+      document.querySelectorAll('[aria-selected="true"]').forEach(el => {
+        const img = el.querySelector("img[src*='/api/assets/']")
+          || (el.tagName === "IMG" && el.src.includes("/api/assets/") ? el : null);
+        if (img) {
+          const m = img.src.match(ASSET_URL_RE);
+          if (m) ids.add(m[1]);
+        }
+      });
+    }
+
+    return [...ids];
   }
 
   // ─── Filename builder ─────────────────────────────────────────────────────────
@@ -222,7 +273,19 @@
   // ─── Main entry ─────────────────────────────────────────────────────────────
 
   async function run(forceOriginal = false) {
-    const settings = await getSettings();
+    let settings;
+    try {
+      settings = await getSettings();
+    } catch (e) {
+      // Extension was reloaded but the old content script is still injected.
+      // The user just needs to refresh the page.
+      if (e.message && e.message.includes("Extension context invalidated")) {
+        alert("Immich Quick Download: Bitte Seite neu laden (F5) — die Extension wurde aktualisiert.");
+      } else {
+        console.error("[Immich DL] getSettings failed:", e);
+      }
+      return;
+    }
 
     if (!settings.immichApiKey) {
       showToast("⚠️ Kein API-Key — bitte Extension-Icon klicken", true, settings);
@@ -232,6 +295,21 @@
     // Check for multi-selection first
     const selected = getSelectedAssetIds();
     const assetId  = getAssetIdFromUrl();
+
+    console.log("[Immich DL] selected:", selected.length, "| assetId:", assetId);
+    if (selected.length === 0 && !assetId) {
+      // Extra debug: dump what checkboxes/selected elements exist
+      const roleChecked = document.querySelectorAll('[role="checkbox"][aria-checked="true"]');
+      const inputChecked = document.querySelectorAll('input[type="checkbox"]:checked');
+      const ariaSelected = document.querySelectorAll('[aria-selected="true"]');
+      console.log("[Immich DL] DOM debug:",
+        "role=checkbox aria-checked=true:", roleChecked.length,
+        "| input:checked:", inputChecked.length,
+        "| aria-selected=true:", ariaSelected.length
+      );
+      if (roleChecked.length > 0) console.log("[Immich DL] First role=checkbox el:", roleChecked[0]);
+      if (inputChecked.length > 0) console.log("[Immich DL] First input:checked el:", inputChecked[0]);
+    }
 
     if (selected.length > 1) {
       // Batch download
