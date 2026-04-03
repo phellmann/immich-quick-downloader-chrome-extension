@@ -1,0 +1,49 @@
+{
+  "manifest_version": 3,
+  "name": "Immich Quick Download",
+  "version": "2.0",
+  "description": "Download & convert Immich photos with keyboard shortcut. HEIC→JPG, custom filenames, batch download.",
+  "permissions": [
+    "downloads",
+    "storage"
+  ],
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["lib/heic2any.min.js", "content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "commands": {
+    "download-photo": {
+      "suggested_key": {
+        "default": "Alt+D"
+      },
+      "description": "Download current Immich photo"
+    },
+    "download-original": {
+      "suggested_key": {
+        "default": "Alt+Shift+D"
+      },
+      "description": "Download current Immich photo as original (no conversion)"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
