@@ -198,7 +198,7 @@
 <div class="header">
   <div class="logo">📷</div>
   <div class="header-text">
-    <h1>Immich Quick Download <span class="badge">v2</span></h1>
+    <h1>Immich Quick Download</h1>
     <p>Alt+D · HEIC→JPG · Batch · Custom Names</p>
   </div>
 </div>
@@ -234,6 +234,15 @@
 <!-- ── Tab: Dateien ── -->
 <div class="panel" id="tab-files">
   <div class="field">
+    <label>Download-Modus</label>
+    <select id="downloadMode">
+      <option value="direct">Direkt in Ordner (kein Dialog)</option>
+      <option value="browser">Chrome-Standard (Dialog / eigener Ordner)</option>
+    </select>
+    <div class="hint" id="downloadModeHint"></div>
+  </div>
+
+  <div id="folderField" class="field">
     <label>Download-Ordner</label>
     <input type="text" id="downloadFolder" placeholder="Immich"/>
     <div class="hint">Relativer Pfad ab Chrome-Download-Ordner, z.B. <code>Fotos/Immich</code></div>
@@ -278,6 +287,13 @@
         <input type="checkbox" id="convertHeic" checked/>
         <span class="slider"></span>
       </label>
+    </div>
+    <div class="hint" style="margin-top:8px; line-height:1.6">
+      <strong style="color:#9ca3af">Konvertierungs-Reihenfolge:</strong><br>
+      1. OS-Codec (macOS immer · Windows: <a href="#" id="hevcLink" style="color:#3b82f6">HEVC aus Microsoft Store</a>)<br>
+      2. Immich Full-Size JPEG — volle Auflösung, kein Codec nötig<br>
+      &nbsp;&nbsp;&nbsp;<a href="#" id="fullsizeLink" style="color:#3b82f6">→ In Immich aktivieren</a><br>
+      3. ⚠️ Preview (1440px) — nur als letzter Ausweg
     </div>
   </div>
 

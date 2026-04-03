@@ -3,30 +3,22 @@
 chrome.commands.onCommand.addListener((command) => {
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     if (!tabs[0]) return;
-    if (command === "download-photo") {
-      chrome.tabs.sendMessage(tabs[0].id, { action: "downloadPhoto", forceOriginal: false });
-    } else if (command === "download-original") {
-      chrome.tabs.sendMessage(tabs[0].id, { action: "downloadPhoto", forceOriginal: true });
-    }
+    chrome.tabs.sendMessage(tabs[0].id, {
+      action: "downloadPhoto",
+      forceOriginal: command === "download-original"
+    });
   });
 });
 
+// Used by browser-mode downloads (chrome.downloads respects Chrome's own folder/dialog settings)
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === "triggerDownload") {
-    const opts = {
+    chrome.downloads.download({
       url: msg.url,
-      filename: msg.filename,
+      filename: msg.filename || undefined,
       saveAs: false,
-    };
-    // conflictAction: uniquify = auto-number, overwrite = replace
-    if (msg.conflictAction) opts.conflictAction = msg.conflictAction;
-
-    chrome.downloads.download(opts, (downloadId) => {
-      if (chrome.runtime.lastError) {
-        sendResponse({ ok: false, error: chrome.runtime.lastError.message });
-      } else {
-        sendResponse({ ok: true, downloadId });
-      }
+    }, (downloadId) => {
+      sendResponse({ ok: !chrome.runtime.lastError, downloadId });
     });
     return true;
   }

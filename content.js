@@ -9,7 +9,8 @@
     jpgQuality: 92,
     convertHeic: true,           // true = always JPG, false = keep original
     filenamePattern: "{date}_{name}",
-    downloadFolder: "Immich",    // relative to Chrome downloads root
+    downloadMode:   "direct",    // direct = no dialog, browser = use Chrome settings
+    downloadFolder: "Immich",    // relative to Chrome downloads root (only used in direct mode)
     conflictAction: "uniquify",  // uniquify | overwrite
     toastPosition: "bottom-right",
     toastDuration: 3500,
@@ -136,47 +137,10 @@
 
   // ─── HEIC conversion ─────────────────────────────────────────────────────────
 
-  function blobToBase64(blob) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload  = () => resolve(reader.result.split(",")[1]);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-  }
-
   async function convertHeicBlob(arrayBuffer, quality, fallbackCtx) {
-    const blob = new Blob([arrayBuffer], { type: "image/heic" });
-
-    // 1. Try native browser decode (macOS Chrome / Safari)
-    try {
-      const nativeBlob = await new Promise((res, rej) => {
-        const url = URL.createObjectURL(blob);
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement("canvas");
-          canvas.width  = img.naturalWidth;
-          canvas.height = img.naturalHeight;
-          canvas.getContext("2d").drawImage(img, 0, 0);
-          URL.revokeObjectURL(url);
-          canvas.toBlob(b => b && b.size > 1000 ? res(b) : rej(new Error("blank")),
-            "image/jpeg", quality / 100);
-        };
-        img.onerror = () => { URL.revokeObjectURL(url); rej(new Error("no native HEIC")); };
-        img.src = url;
-      });
-      return nativeBlob;
-    } catch (_) {}
-
-    // 2. Immich server pre-rendered JPEG (full-quality preview)
-    if (fallbackCtx) {
-      const { base, assetId, apiKey } = fallbackCtx;
-      const res = await fetch(`${base}/api/assets/${assetId}/thumbnail?size=preview`,
-        { headers: { "x-api-key": apiKey } });
-      if (res.ok) return await res.blob();
-    }
-
-    throw new Error("HEIC-Konvertierung fehlgeschlagen");
+    // Delegates to lib/heic2any.min.js → window.convertHeic()
+    // Pipeline: ImageDecoder API → canvas decode → Immich fullsize → Immich preview (1440px, warns)
+    return await window.convertHeic(arrayBuffer, quality, fallbackCtx);
   }
 
   // ─── Single asset download ───────────────────────────────────────────────────
@@ -205,10 +169,17 @@
     let finalBlob, finalExt, mimeType;
 
     if (doConvert) {
-      finalBlob = await convertHeicBlob(buffer, settings.jpgQuality,
+      showToast("🔄 Konvertiere HEIC → JPG…", false, settings);
+      const heicResult = await convertHeicBlob(buffer, settings.jpgQuality,
         { base, assetId, apiKey });
+      finalBlob = heicResult.blob;
       finalExt  = "jpg";
       mimeType  = "image/jpeg";
+      if (heicResult.method === "preview") {
+        showToast("⚠️ Nur 1440px Preview (kein HEVC Codec verfügbar). Für volle Auflösung: 'HEVC Video Extensions' im Microsoft Store installieren — oder in Immich Admin → Einstellungen → Bild → Vollgröße aktivieren.", true, settings);
+      } else if (heicResult.method === "fullsize") {
+        // full res from Immich server-side, no extra toast needed
+      }
     } else {
       const mimeMap = { jpg:"image/jpeg", jpeg:"image/jpeg", png:"image/png",
                         gif:"image/gif",  webp:"image/webp", heic:"image/heic",
@@ -219,22 +190,33 @@
     }
 
     const filename = buildFilename(settings.filenamePattern, meta, finalExt, index);
-    const folder   = settings.downloadFolder ? settings.downloadFolder.replace(/\/$/, "") + "/" : "";
-    const fullPath = folder + filename;
 
-    const b64     = await blobToBase64(finalBlob);
-    const dataUrl = `data:${mimeType};base64,${b64}`;
+    const objectUrl = URL.createObjectURL(finalBlob);
 
-    return new Promise((resolve, reject) => {
-      chrome.runtime.sendMessage(
-        { action: "triggerDownload", url: dataUrl, filename: fullPath,
-          conflictAction: settings.conflictAction },
-        (resp) => {
-          if (resp && resp.ok) resolve(filename);
-          else reject(new Error(resp?.error || "Download fehlgeschlagen"));
-        }
-      );
-    });
+    if (settings.downloadMode === "direct") {
+      // Direct <a> click — goes straight to the default download folder,
+      // no dialog, regardless of Chrome's "ask where to save" setting.
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = filename;
+      a.style.display = "none";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
+    } else {
+      // Browser mode — use chrome.downloads API, respects Chrome's own
+      // download folder setting and shows the save dialog if the user
+      // has "Ask where to save each file" enabled in Chrome.
+      chrome.runtime.sendMessage({
+        action: "triggerDownload",
+        url: objectUrl,
+        filename,
+      });
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 30000);
+    }
+
+    return filename;
   }
 
   // ─── Main entry ─────────────────────────────────────────────────────────────

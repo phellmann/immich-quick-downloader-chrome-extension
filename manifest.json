@@ -1,5 +1,5 @@
 {
-  "manifest_version": 1,
+  "manifest_version": 3,
   "name": "Immich Quick Download",
   "version": "1.0",
   "description": "Download & convert Immich photos with keyboard shortcut. HEIC→JPG, custom filenames, batch download.",
