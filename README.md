@@ -23,7 +23,10 @@ A Chrome/Edge browser extension that lets you download photos from your self-hos
 
 ## Screenshots
 
-> _Settings popup with Auth, Files, Format and Shortcuts tabs_
+![Immich Quick Download - Tab Auth](https://github.com/user-attachments/assets/d9c1e236-3d3f-482a-b42d-3b988e15a6e1)
+![Immich Quick Download - Tab Files](https://github.com/user-attachments/assets/d8420692-e10c-4d6c-9255-e4c37cffb15e)
+![Immich Quick Download - Tab Format](https://github.com/user-attachments/assets/51297eb3-c2c3-48fd-9d77-47f429d9854c)
+![Immich Quick Download - Tab Shortcut](https://github.com/user-attachments/assets/b8b0850c-538d-4061-8710-9ff8a4586683)
 
 ---
 
